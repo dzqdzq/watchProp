@@ -47,7 +47,7 @@ function watchProp(targetObject, propertyName, isDebugger = false) {
   const prop = sym || propertyName;
   const desc = Object.getOwnPropertyDescriptor(targetObject, prop);
   if (!desc) {
-    console.error(`[${TAG}] ${propertyName} 属性不存在`);
+    console.error(`[${TAG}] ${propertyName} 属性不存在, 无法监控`);
     return;
   }
   if (!desc.configurable) {
@@ -62,12 +62,15 @@ function watchProp(targetObject, propertyName, isDebugger = false) {
       if (isDebugger) {
         debugger;
       }
-      console.log(
-        `[${TAG}][调用] ${propertyName} 参数:`,
-        args,
-        "位置:\n",
-        getCallerInfo()
-      );
+      // 防止无限递归
+      if(targetObject !== console && targetObject !== log){
+        console.log(
+          `[${TAG}][调用] ${propertyName} 参数:`,
+          args,
+          "位置:\n",
+          getCallerInfo()
+        );
+      }
       return oldValue.apply(this, args);
     };
     return;

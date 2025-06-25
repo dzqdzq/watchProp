@@ -8,12 +8,10 @@ import clipboardy from 'clipboardy';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// 读取主文件内容
 const indexPath = path.join(__dirname, '../index.js');
 const indexContent = fs.readFileSync(indexPath, 'utf-8');
 
-const usage = `
-\`使用方法：
+const usage = `/* 使用方法：
 监听属性: 
   watchProp(targetObj, 'propName', false)
 
@@ -22,13 +20,11 @@ const usage = `
   
 取消对象监听：
   targetObj = unwatchObj(targetObj);
-\``;
+*/`;
 // 移除 export 语句，生成可直接执行的代码
 const executableCode = indexContent
-  .replace(/export\s*\{[^}]+\};?/g, '') // 移除 export 语句
-  .replace(/import\s+[^;]+;/g, '') // 移除 import 语句
-  + `console.log(${usage})`;
+  .replace(/export\s*\{[^}]+\};?/g, '')
+  + usage;
 
-// 写入剪贴板
 clipboardy.writeSync(executableCode);
-console.log('✅ watchProps 代码已复制到剪贴板，粘贴到你需要的地方！');
+console.log('✅ watchProps Code has been copied to the clipboard.');
