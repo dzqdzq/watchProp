@@ -1,15 +1,16 @@
 # watchProps
 
-一个强大的JavaScript对象和属性监听工具库，支持监听对象的所有操作（读取、写入、删除、方法调用等）。
+强大的 JavaScript 对象属性监听工具，支持细粒度的属性监控和对象行为追踪。
 
-## 功能特性
+## 特性
 
-- 🔍 **属性监听**: 监听对象特定属性的访问、修改和调用
-- 📦 **对象监听**: 监听整个对象的所有操作
-- 🚀 **用户友好**: 提供多种使用方案，适应不同场景
-- 🛠️ **调试支持**: 内置debugger支持，方便调试
-- 📝 **详细日志**: 提供完整的调用栈信息
-- ♻️ **可撤销**: 支持随时取消监听
+- 🎯 **属性级监听**: 精确监控特定属性的访问、修改和调用
+- 🔍 **对象级监听**: 全面监控对象的所有操作
+- 🪝 **丰富的钩子**: 支持 before/after 钩子，类似 Frida 的拦截机制
+- 🐛 **条件断点**: 支持函数式条件断点，精确调试
+- 🔧 **高度可配置**: 灵活的选项配置，满足不同场景需求
+- 🔄 **向后兼容**: 完全兼容旧版本 API
+- 🚀 **零依赖**: 纯 JavaScript 实现，无外部依赖
 
 ## 安装
 
@@ -19,17 +20,51 @@ npm install watch-props
 
 ## 快速开始
 
-### 属性监听
+### 基本用法
 
 ```javascript
-import { watchProp } from 'watch-props';
+import { watchProp, watchObj } from 'watch-props';
 
-const obj = { name: 'test', value: 42 };
+// 监控特定属性
+const obj = { name: 'test', age: 25 };
+const proxy = watchProp(obj, 'name', {
+  onModify: (context) => {
+    console.log(`属性 ${context.property} 从 ${context.oldValue} 改为 ${context.newValue}`);
+  }
+});
 
-// 监听特定属性
-watchProp(obj, 'name', true); // 第三个参数为是否开启debugger
+proxy.name = 'Alice'; // 触发监听
 
-obj.name = 'changed'; // 会输出监听日志
+// 监控整个对象
+const objProxy = watchObj(obj, {
+  onAccess: (context) => {
+    console.log(`访问了属性: ${context.property}`);
+  }
+});
+```
+
+### 高级用法
+
+```javascript
+// 条件断点
+watchProp(user, 'password', {
+  debugger: (context) => {
+    // 只有在设置弱密码时才断点
+    return context.type === 'set' && context.newValue.length < 8;
+  }
+});
+
+// 性能监控
+watchObj(apiClient, {
+  onCall: (context) => {
+    context.startTime = performance.now();
+  },
+  onAfter: (context) => {
+    if (context.type === 'apply') {
+      console.log(`API 调用耗时: ${performance.now() - context.startTime}ms`);
+    }
+  }
+});
 ```
 
 ### 对象监听
@@ -75,34 +110,80 @@ eval(unwatchCode); // 自动恢复原对象
 
 ## API 文档
 
-### watchProp(targetObject, propertyName, isDebugger)
+### watchProp(target, property, options)
 
 监听对象的特定属性。
 
 **参数:**
-- `targetObject` (Object): 目标对象
-- `propertyName` (String|Symbol): 要监听的属性名
-- `isDebugger` (Boolean): 是否开启debugger，默认false
+- `target` - 目标对象
+- `property` - 要监听的属性名
+- `options` - 配置选项（可以是布尔值或对象）
 
-### watchObj(obj, isDebugger, objName)
+**返回:** 代理对象
 
-创建对象监听proxy。
+```javascript
+// 简单用法（向后兼容）
+watchProp(obj, 'name', true); // 开启调试
+
+// 完整配置
+watchProp(obj, 'name', {
+  debugger: true, // 或函数
+  log: true,
+  onBefore: (context) => { /* ... */ },
+  onAfter: (context) => { /* ... */ },
+  onAccess: (context) => { /* ... */ },
+  onModify: (context) => { /* ... */ },
+  onCall: (context) => { /* ... */ }
+});
+```
+
+### watchObj(target, options)
+
+监听整个对象的所有操作。
 
 **参数:**
-- `obj` (Object): 要监听的对象
-- `isDebugger` (Boolean): 是否开启debugger，默认false
-- `objName` (String): 对象名称（可选）
+- `target` - 目标对象
+- `options` - 配置选项（可以是布尔值或对象）
 
-**返回:** Proxy对象
+**返回:** 代理对象
 
-### unwatchObj(objOrName)
+```javascript
+// 简单用法
+watchObj(obj, true); // 开启调试
 
-取消对象监听。
+// 完整配置
+watchObj(obj, {
+  debugger: (context) => context.type === 'set',
+  log: false,
+  onBefore: (context) => console.log('操作前:', context),
+  onAfter: (context) => console.log('操作后:', context)
+});
+```
 
-**参数:**
-- `objOrName` (Object|String): 要取消监听的对象或对象名称
+### unwatchProp(target, property)
 
-**返回:** Boolean - 是否成功取消
+取消对特定属性的监听。
+
+```javascript
+unwatchProp(obj, 'name');
+```
+
+### unwatchObj(target)
+
+取消对整个对象的监听。
+
+```javascript
+unwatchObj(obj);
+```
+
+### getWatchedProps(target)
+
+获取对象当前被监听的所有属性。
+
+```javascript
+const props = getWatchedProps(obj);
+console.log('被监听的属性:', props);
+```
 
 ### createWatchCode(objName, isDebugger)
 
@@ -123,47 +204,112 @@ eval(unwatchCode); // 自动恢复原对象
 
 **返回:** String - 可执行的代码
 
+## 配置选项
+
+### Options 对象
+
+```javascript
+{
+  debugger: boolean | function,  // 是否开启断点或条件断点函数
+  log: boolean,                  // 是否开启日志输出
+  onBefore: function,            // 操作前钩子
+  onAfter: function,             // 操作后钩子
+  onAccess: function,            // 属性访问钩子
+  onModify: function,            // 属性修改钩子
+  onCall: function               // 方法调用钩子
+}
+```
+
+### Context 对象
+
+钩子函数接收的 context 对象包含以下信息：
+
+```javascript
+{
+  type: string,        // 操作类型: 'get', 'set', 'apply', 'deleteProperty' 等
+  target: object,      // 目标对象
+  property: string,    // 属性名（如果适用）
+  value: any,          // 当前值或返回值
+  oldValue: any,       // 旧值（set 操作时）
+  newValue: any,       // 新值（set 操作时）
+  args: array,         // 方法参数（apply 操作时）
+  result: any,         // 操作结果
+  caller: string,      // 调用者信息
+  timestamp: number    // 时间戳
+}
+```
+
 ## 使用场景
 
-### 调试对象变化
+### 1. 开发调试
 
 ```javascript
-let userState = { name: 'John', age: 30 };
-
-// 开启调试模式监听
-eval(createWatchCode('userState', true));
-
-// 任何对userState的操作都会触发debugger
-userState.name = 'Jane';
+// 调试状态变化
+const state = { count: 0, user: null };
+watchProp(state, 'count', {
+  debugger: (context) => context.newValue > 10, // 只在 count > 10 时断点
+  onModify: (context) => {
+    console.log(`计数器从 ${context.oldValue} 变为 ${context.newValue}`);
+  }
+});
 ```
 
-### 监听数组操作
+### 2. 数据验证
 
 ```javascript
-let myArray = [1, 2, 3];
-
-const arrayProxy = watchObj(myArray);
-myArray = arrayProxy;
-
-// 监听数组操作
-myArray.push(4); // 会输出日志
-myArray[0] = 'changed'; // 会输出日志
+// 属性验证
+watchProp(user, 'email', {
+  onModify: (context) => {
+    if (!context.newValue.includes('@')) {
+      throw new Error('无效的邮箱地址');
+    }
+  }
+});
 ```
 
-### 监听函数调用
+### 3. 性能监控
 
 ```javascript
-let api = {
-  getData() { return 'data'; },
-  setData(value) { this.data = value; }
-};
+// API 性能监控
+watchObj(apiClient, {
+  onCall: (context) => {
+    context.startTime = performance.now();
+    console.log(`开始调用 ${context.property}`);
+  },
+  onAfter: (context) => {
+    if (context.type === 'apply') {
+      const duration = performance.now() - context.startTime;
+      console.log(`${context.property} 耗时: ${duration.toFixed(2)}ms`);
+    }
+  }
+});
+```
 
-const apiProxy = watchObj(api);
-api = apiProxy;
+### 4. 状态同步
 
-// 监听方法调用
-api.getData(); // 会输出调用日志
-api.setData('new data'); // 会输出调用日志
+```javascript
+// 自动同步到 localStorage
+watchObj(appState, {
+  onModify: (context) => {
+    localStorage.setItem('appState', JSON.stringify(context.target));
+  }
+});
+```
+
+### 5. 安全监控
+
+```javascript
+// 监控敏感操作
+watchProp(secureObject, 'password', {
+  onAccess: (context) => {
+    console.warn('密码被访问!', context.caller);
+    // 记录访问日志
+  },
+  onModify: (context) => {
+    console.warn('密码被修改!', context.caller);
+    // 触发安全检查
+  }
+});
 ```
 
 ## 注意事项
@@ -179,6 +325,30 @@ api.setData('new data'); // 会输出调用日志
 ✅ **内部优化**：
   - 使用 WeakMap 存储 Proxy 元数据，避免在监听过程中触发额外的监听事件
   - 优化 set trap 实现，避免 Reflect.set 触发重复的 defineProperty 监听
+
+## 高级用法
+
+### 自定义监听管理
+
+```javascript
+import { watchManager } from 'watch-props';
+
+// 直接使用管理器
+const proxy = watchManager.watchObj(myObj, false, 'myCustomObj');
+
+// 按名称取消监听
+watchManager.unwatchObj('myCustomObj');
+```
+
+### 批量监听
+
+```javascript
+const objects = [obj1, obj2, obj3];
+const proxies = objects.map(obj => watchObj(obj));
+
+// 批量取消
+proxies.forEach(proxy => unwatchObj(proxy));
+```
 
 ## 高级用法
 
