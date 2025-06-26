@@ -1,7 +1,7 @@
 {
-  "name": "watch-props",
-  "version": "1.0.0",
-  "description": "监视某个属性的变化或者监控对象行为",
+  "name": "watch-prop",
+  "version": "1.0.1",
+  "description": "监视某个属性的变化",
   "author": "dzqdzq",
   "main": "index.js",
   "type":"module",
@@ -10,17 +10,15 @@
     "watch",
     "watch-props",
     "watchProps",
-    "watchObj",
+    "hook",
     "dzqdzq"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/dzqdzq/watchProps.git"
+    "url": "https://github.com/dzqdzq/watchProp.git"
   },
   "bin": {
-    "watchProps": "bin/cmd.js",
-    "watch-props": "bin/cmd.js",
-    "watchObj": "bin/cmd.js"
+    "watchprop": "bin/cmd.js"
   },
   "license": "MIT",
   "dependencies": {

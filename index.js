@@ -1,78 +1,98 @@
 /**
- * 获取调用栈信息，用于确定谁在访问/修改/调用属性
- * @returns {string} 调用栈信息
- */
-function getCallerInfo() {
-  const error = new Error();
-  const stack = error.stack.split('\n');
-  return stack.slice(2).join('\n');
-}
-
-/**
- * 监控对象某个属性增删改查
+ * 监控对象某个属性行为
  * @param {Object} target 目标对象
  * @param {string} propertyName 要监控的属性名， 支持Symbol
- * @param {Object|Boolean} options 配置选项或兼容旧版本的isDebugger参数
+ * @param {Object|Boolean} options 配置选项, if options is boolean, options is debugger
  * @param {Boolean|Function} options.debugger 是否开启调试或条件断点函数
  * @param {Boolean} options.log 是否输出日志，默认true
- * @param {Function} options.onBefore 操作前钩子函数
- * @param {Function} options.onAfter 操作后钩子函数
+ * @param {Function} options.onModResult 返回值处理函数
  */
 function watchProp(targetObject, propertyName, options = {}) {
-  // 兼容旧版本API
-  if (typeof options === 'boolean') {
-    options = { debugger: options };
+  const TAG = "WATCH_PROP";
+  if(typeof options === "boolean"){
+    options = {
+      debugger: options
+    }
   }
-  
-  // 默认配置
   const config = {
     debugger: false,
     log: true,
-    onBefore: null,
-    onAfter: null,
+    onModResult: null,
     ...options
   };
-  const TAG = "WATCH_PROP";
-  if (!targetObject || !propertyName) {
-    console.error(`[${TAG}] 参数错误`);
+
+  function getCallerInfo() {
+    const error = new Error();
+    const stack = error.stack.split('\n');
+    return stack.slice(2).join('\n');
+  }
+
+  // 防止无限递归
+  const safeLog = (message, ...args) => {
+    if (config.log && targetObject !== console && propertyName !== 'log') {
+      console.log(`[${TAG}]`, message, ...args);
+    }
+  };
+
+  // 防止无限递归
+  const errorLog = (message, ...args) => {
+    const isErrorHook = targetObject === console && propertyName === 'error';
+    const log = isErrorHook ? console.log : console.error;
+    log(`[${TAG}]`, message, ...args);
+  };
+  
+  if (!targetObject) {
+    errorLog(`targetObject不能为空`);
     return;
   }
 
-  let isSymbol = false;
-  if (typeof propertyName === "string") {
-    if (propertyName === "") {
-      console.error(`[${TAG}] 参数错误, propertyName必须是string或者Symbol`);
-      return;
-    } else if (propertyName.startsWith("Symbol(")) {
-      propertyName = propertyName.replace(/"/g, "").replace(/'/g, "");
-      isSymbol = true;
-    }
+  if(typeof propertyName !== 'string'){
+    errorLog(`参数错误, propertyName必须是string`);
+    return;
   }
 
-  let sym = null;
-  if (typeof propertyName === "symbol" || isSymbol) {
-    propertyName = propertyName.toString();
-    sym = Object.getOwnPropertySymbols(targetObject).find(
+  propertyName = propertyName.trim();
+  if(propertyName === ""){
+    errorLog(`参数错误, propertyName不能为空`);
+    return;
+  }
+
+  let prop = propertyName;
+  if (propertyName.startsWith("Symbol(")) {
+    propertyName = propertyName.replace(/"/g, "").replace(/'/g, "");
+    let sym = Object.getOwnPropertySymbols(targetObject).find(
       (symbol) => symbol.toString() === propertyName
     );
     if (!sym) {
-      console.error(`[${TAG}] ${propertyName} 属性不存在`);
+      errorLog(`${propertyName} Symbol属性不存在`);
       return;
     }
+    prop = sym;
   }
 
-  const prop = sym || propertyName;
   const desc = Object.getOwnPropertyDescriptor(targetObject, prop);
   if (!desc) {
-    console.error(`[${TAG}] ${propertyName} 属性不存在, 无法监控`);
+    errorLog("无法监控",`${propertyName} 属性不存在, `);
     return;
   }
   if (!desc.configurable) {
-    console.error(`[${TAG}] ${propertyName} 被限制无法监控`);
+    errorLog("无法监控",`${propertyName} 被限制修改`);
     return;
   }
 
-  // 辅助函数：条件断点检查
+  if(!watchProp._watchmap){
+    watchProp._watchmap = new WeakMap();
+  }
+
+  if(!watchProp._watchmap.get(targetObject)){
+    watchProp._watchmap.set(targetObject, {});
+  }
+
+  if(watchProp._watchmap.get(targetObject)[propertyName]){
+    errorLog("无法监控",`当前对象的${propertyName}属性已经被监控`);
+    return;
+  }
+
   const shouldDebug = (context) => {
     if (typeof config.debugger === 'function') {
       return config.debugger(context);
@@ -80,16 +100,9 @@ function watchProp(targetObject, propertyName, options = {}) {
     return config.debugger;
   };
   
-  // 辅助函数：安全日志输出
-  const safeLog = (message, ...args) => {
-    if (config.log && targetObject !== console) {
-      console.log(message, ...args);
-    }
-  };
-
   const { set, get } = desc;
   if (typeof desc.value === "function") {
-    let oldValue = desc.value;
+    let func = desc.value;
     targetObject[prop] = function (...args) {
       const context = {
         type: 'call',
@@ -98,40 +111,21 @@ function watchProp(targetObject, propertyName, options = {}) {
         arguments: args,
         caller: getCallerInfo()
       };
-      
-      // 执行前钩子
-      if (config.onBefore) {
-        config.onBefore(context);
-      }
-      if (config.onCall) {
-        config.onCall(context);
-      }
-      
-      // 条件断点
+
       if (shouldDebug(context)) {
         debugger;
       }
-      
-      // 日志输出
-      safeLog(
-        `[${TAG}][调用] ${propertyName} 参数:`,
-        args,
-        "位置:\n",
-        getCallerInfo()
+
+      safeLog(`[call] ${propertyName} args:`, args, "调用位置:\n",
+        context.caller
       );
-      
-      // 执行原函数
-      const result = oldValue.apply(this, args);
-      
-      // 执行后钩子
-      const afterContext = { ...context, result };
-      if (config.onAfter) {
-        config.onAfter(afterContext);
+
+      if (config.onModResult) {
+        return config.onModResult({ ...context, func: func.bind(this) });
       }
-      
-      return result;
+      return func.apply(this, args);
     };
-    return;
+    return;// end hook function
   } else if (set || get) {
     let oldSet = set;
     let oldGet = get;
@@ -141,41 +135,29 @@ function watchProp(targetObject, propertyName, options = {}) {
           type: 'set',
           target: targetObject,
           property: propertyName,
-          oldValue: this[prop],
+          oldValue: oldGet? oldGet.call(this) : this[prop],
           newValue: value,
           caller: getCallerInfo()
         };
-        
-        // 执行前钩子
-        if (config.onBefore) {
-          config.onBefore(context);
-        }
-        if (config.onModify) {
-          config.onModify(context);
-        }
-        
-        // 条件断点
+
         if (shouldDebug(context)) {
           debugger;
         }
         
-        // 日志输出
-        safeLog(`[${TAG}][修改] ${propertyName} 值:`, value);
-        safeLog(
-          `[${TAG}][修改] ${propertyName} 修改位置:\n`,
-          getCallerInfo()
+        if (typeof config.onModResult === 'function') {
+          const newVal = config.onModResult({ ...context, result: value });
+          safeLog(`[set] ${propertyName}`, "onModResult成功", "原值",context.oldValue,
+            "应该修改为:", value, "实际修改为:", newVal, 
+            "修改位置:\n", context.caller
+          );
+          oldSet.call(this, newVal);
+          return;
+        }// end if
+        safeLog(`[set] ${propertyName}`, "原值", context.oldValue, "新值",value, 
+          "修改位置:\n", context.caller
         );
-        
-        // 执行原setter
-        const result = oldSet.apply(this, [value]);
-        
-        // 执行后钩子
-        const afterContext = { ...context, result };
-        if (config.onAfter) {
-          config.onAfter(afterContext);
-        }
-        
-        return result;
+        oldSet.call(this, value);
+        return;
       };
     }
     if (oldGet) {
@@ -186,37 +168,33 @@ function watchProp(targetObject, propertyName, options = {}) {
           property: propertyName,
           caller: getCallerInfo()
         };
-        
-        // 执行前钩子
-        if (config.onBefore) {
-          config.onBefore(context);
-        }
-        if (config.onAccess) {
-          config.onAccess(context);
-        }
-        
+
         // 条件断点
         if (shouldDebug(context)) {
           debugger;
         }
         
         // 执行原getter
-        const value = oldGet.apply(this);
+        const result = oldGet.apply(this);
         
-        // 日志输出
-        safeLog(`[${TAG}][访问] ${propertyName} 值:`, value, "位置:\n", getCallerInfo());
-        
-        // 执行后钩子
-        const afterContext = { ...context, value };
-        if (config.onAfter) {
-          config.onAfter(afterContext);
+        if (typeof config.onModResult === 'function') {
+          const newVal = config.onModResult({ ...context, result });
+          oldSet && oldSet.call(this, newVal);
+          safeLog(`[get] ${propertyName}`, "onModResult成功", 
+            "应该获取:", result, "实际获取:", newVal, 
+            "获取位置:\n", context.caller
+          );
+          return newVal;
         }
-        
-        return value;
+
+        safeLog(`[get] ${propertyName}`, "获取值:", result, 
+          "获取位置:\n", context.caller
+        );
+        return result;
       };
     }
     Object.defineProperty(targetObject, prop, desc);
-    return;
+    return;//end hook set get
   } else {
     let _value = targetObject[prop];
     Object.defineProperty(targetObject, prop, {
@@ -226,25 +204,24 @@ function watchProp(targetObject, propertyName, options = {}) {
           target: targetObject,
           property: propertyName,
           value: _value,
+          caller: getCallerInfo()
         };
         
-        // 执行前钩子
-        if (config.onBefore) {
-          config.onBefore(context);
-        }
-        // 条件断点
         if (shouldDebug(context)) {
           debugger;
         }
-        // 日志输出
-        safeLog(`[${TAG}][访问] ${propertyName} 值:`, _value, "位置:\n", getCallerInfo());
         
-        // 执行后钩子
-        const afterContext = { ...context };
-        if (config.onAfter) {
-          return config.onAfter(afterContext);
+        if (typeof config.onModResult === 'function') {
+          const result = _value;
+          _value = config.onModResult({ ...context, result });
+          safeLog(`[get] ${propertyName}`, "onModResult成功", 
+            "应该获取:", result, "实际获取:", _value, 
+            "获取位置:\n", context.caller
+          );
+          return;
         }
-        
+
+        safeLog(`[get] ${propertyName} 值:`, _value, "位置:\n", context.caller);
         return _value;
       },
       set: function (value) {
@@ -257,35 +234,34 @@ function watchProp(targetObject, propertyName, options = {}) {
           caller: getCallerInfo()
         };
         
-        // 执行前钩子
-        if (config.onBefore) {
-          config.onBefore(context);
-        }
-        if (config.onModify) {
-          config.onModify(context);
-        }
-        
-        // 条件断点
         if (shouldDebug(context)) {
           debugger;
         }
         
-        // 日志输出
-        safeLog(
-          `[${TAG}][修改] ${propertyName} 原值:`, _value, "新值:", value, "位置:\n", getCallerInfo()
-        );
-        
-        // 更新值
-        _value = value;
-        
-        // 执行后钩子
-        const afterContext = { ...context };
-        if (config.onAfter) {
-          config.onAfter(afterContext);
+        if (typeof config.onModResult === 'function') {
+          _value = config.onModResult({ ...context, result: value });
+          safeLog(`[set] ${propertyName}`, "onModResult成功", "原值",context.oldValue,
+            "应该修改为:", value, "实际修改为:", _value, 
+            "修改位置:\n", context.caller
+          );
+          return;
         }
+
+        safeLog(`[set] ${propertyName} 原值:`, _value, "新值:", value, 
+          "修改位置:\n", context.caller
+        );
+        _value = value;
       },
       configurable: true,
       enumerable: true,
     });
   }
+
+  watchProp._watchmap.get(targetObject)[propertyName] = config;
+  if(!watchProp.getConfig){
+    watchProp.getConfig = function(targetObject, propertyName){
+      return watchProp._watchmap.get(targetObject)[propertyName];
+    }
+  }
+  return config;
 }
