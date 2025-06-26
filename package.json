@@ -1,10 +1,10 @@
 {
   "name": "watch-prop",
-  "version": "1.0.1",
+  "version": "1.0.7",
   "description": "监视某个属性的变化",
   "author": "dzqdzq",
   "main": "index.js",
-  "type":"module",
+  "type": "module",
   "keywords": [
     "js",
     "watch",
@@ -13,9 +13,11 @@
     "hook",
     "dzqdzq"
   ],
+  "scripts": {
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dzqdzq/watchProp.git"
+    "url": "git+https://github.com/dzqdzq/watchProp.git"
   },
   "bin": {
     "watchprop": "bin/cmd.js"
