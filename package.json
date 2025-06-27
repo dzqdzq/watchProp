@@ -1,6 +1,6 @@
 {
-  "name": "watch-prop",
-  "version": "1.0.7",
+  "name": "watchprop",
+  "version": "1.0.8",
   "description": "监视某个属性的变化",
   "author": "dzqdzq",
   "main": "index.js",
